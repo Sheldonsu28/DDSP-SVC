@@ -30,7 +30,9 @@ from utils import map_normal_diagonal
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.set_float32_matmul_precision('high')
-
+import faiss
+import sys
+sys.modules['faiss.swigfaiss_avx2'] = faiss.swigfaiss
 def generate_pink_noise_mel(unit):
     """
     Generates pink noise in the Mel-frequency space.
@@ -354,8 +356,8 @@ if __name__ == '__main__':
     
     use_style = True
     use_style_reflow = False
-    cycle_inference  = False
-    whisper_mix = False
+    cycle_inference  = True
+    whisper_mix = True
     use_post_processor = False
     z_masking = False
     mask_num = 4
@@ -437,16 +439,7 @@ if __name__ == '__main__':
 
    
     if use_style:
-        # style_model = load_vc_style_model('./exp/reflow-style-elysia_old/model_8000.pt', device=device, ver=0)
-        # style_model = load_vc_style_model('./exp/reflow-style-elysia_new/model_36000.pt', device=device, ver=4)
-        # style_model = load_vc_style_model('./exp/reflow-style-test/model_21500.pt', device=device, ver=4)
-        style_model = load_vc_style_model('./exp/reflow-style-test2/model_6000.pt', device=device, ver=5)
-        # style_model = load_vc_style_model('./exp/reflow-style-test/model_16000.pt', device=device, ver=4)
-
-        # style_model = load_vc_style_model('./exp/reflow-style-currupt/model_10000.pt', device=device, ver=0)
-        # style_model = load_vc_style_model('./exp/reflow-style-cyrene/model_13000.pt', device=device, ver=4) # for cyrene
-        # style_model = load_vc_style_reflow_model('./exp/reflow-vc-style-elysia/model_3500.pt', device=device) # for cipher
-        # style_model = torch.compile(style_model, fullgraph=False,  mode="max-autotune")
+        style_model = load_vc_style_model('./exp/reflow-style-elysia_new/model_8000.pt', device=device, ver=0)
         # emb_path = 'data/hubert_mean_ellie.npy'
         # emb_path = 'data/speaker_cyrene.npy'
         # emb_path = 'data/speaker_curruption_spk.npy'
@@ -461,19 +454,9 @@ if __name__ == '__main__':
         # emb2_path = 'data/speaker_elysia_whisper.npy'
         # if os.path.exists(emb2_path):
         #     whisper_mean = torch.from_numpy(np.load(emb2_path)).to(device)
-    if use_style_reflow:
-        style_reflow = load_vc_style_reflow_model('./exp/reflow-vc-style-currupt/model_9500.pt', device=device) #elysia
-        # style_reflow = load_vc_style_reflow_model('./exp/reflow-vc-style-elysia-old/model_13500.pt', device=device) #elysia
-        # style_reflow = load_vc_style_reflow_model('./exp/reflow-vc-style/model_4000.pt', device=device) #cipher
-        # style_reflow = load_vc_style_reflow_model('./exp/reflow-vc-style/model_4500.pt', device=device) #elysia
-        # style_reflow = load_flow_style_model('./exp/reflow-style/model_7500.pt', device=device)
-        # style_reflow = load_vc_style_reflow_model('./exp/reflow-vc-style/model_4500.pt', device=device)
-        # style_reflow = load_vc_style_reflow_model('./exp/reflow-vc-style-cipher/model_13000.pt', device=device) # for cipher
-        # style_reflow = load_vc_style_reflow_model('./exp/reflow-vc-style-cyrene/model_6000.pt', device=device) # for cyrene
         # style_reflow = torch.compile(style_reflow, fullgraph=False,  mode="max-autotune")
         
-    if use_post_processor:
-        post_reflow = load_post_processor_model('./exp/post_processor/model_1500.pt', device=device)
+   
     fr_weight = float(cmd.f_retrieve)
     best_high = 349.23  #  466.16 for elysia,  349.23 for cyrene
     best_low = 207.65 # 261.63 for elysia, 207.65 for cyrene
@@ -522,13 +505,9 @@ if __name__ == '__main__':
     # sum_mean = torch.from_numpy(np.load('exp/all_mean.npy')).to(args.device)
     # unit_mean = torch.from_numpy(np.load('exp/unit_mean_brethy.npy')).to(args.device)
     print('Cut the input audio into ' + str(len(segments)) + ' slices')
-    
-    mode = DiagonalLagrangian(768)
-    mode = mode.to('cuda')
-    mode.load_state_dict(torch.load('exp/reflow-test-lag/model_5500.pt', map_location=torch.device(device))['model'])
    
     
-    with torch.no_grad():
+    with torch.inference_mode():
     # if True:
         # mels = []
         for segment in tqdm(segments):
@@ -612,7 +591,7 @@ if __name__ == '__main__':
                     # units, _, _, _, _, _, _, _, _, _, _, _  = style_model(seg_units, seg_units1, seg_units2, hubert_mean, None, seg_f0, seg_volume, t_start=0.0, infer=True, infer_step=style_reflow_steps)
                     # units, _, _, _, _, _, _, _, _, _, _, _, _, _  = style_model(seg_units, seg_units1, seg_units2, spk_id, None, seg_f0, seg_volume, t_start=0.0, infer=True, infer_step=style_reflow_steps)
                     # units, z_f, z_r, z_pr, mu_pr, logvar_pr, z_ps, mu_ps, logvar_ps, logdet_f, logdet_r, _, spk_pred, _ = style_model(seg_units, seg_units1, seg_units2,spk_id, None, seg_f0, None, infer=True, noise_fac=1e-4, infer_step=style_reflow_steps)
-                    auto_formants = 0
+                    # auto_formants = 0
                 else:
                     units = seg_units
                     auto_formants = 0
@@ -671,7 +650,7 @@ if __name__ == '__main__':
                             # seg_units1 = seg_units1 - mean_seg + mean_index
                             
                     # units, formant, vq_loss, perplexity, spk_pred = style_model(seg_units, seg_units1,seg_units2,hubert_mean,  None, seg_f0, None, infer=True, noise_fac=0.0)
-                    units, mu_pr, logvar_pr, mu_ps, logvar_ps, z_fwd, z_pr, z_bkw, log_det_bkw, spk_pred, auto_formants, logdet_fwd, z_ps, msk = style_model( gaussian_blur_1d(units, 63, 7), gaussian_blur_1d(seg_units1, 63, 7), gaussian_blur_1d(seg_units2, 63, 7), hubert_mean, None, seg_f0, seg_volume, infer=True, noise_fac=0.0, alpha=1.0)
+                    units, mu_pr, logvar_pr, mu_ps, logvar_ps, z_fwd, z_pr, z_bkw, log_det_bkw, spk_pred, logdet_fwd, auto_formants, z_ps, msk = style_model(units, seg_units1, seg_units2, hubert_mean, None, seg_f0, seg_volume, infer=True, noise_fac=0.0, alpha=1.0)
                     
                 # if use_style_reflow:
                 #     units = style_reflow(z_fwd, gt_spec=seg_units, infer=True, infer_step=style_reflow_steps, method='euler', t_start=style_reflow_start, use_tqdm=False)
@@ -703,8 +682,8 @@ if __name__ == '__main__':
                 # print(f"Normalized error/styled: {metrics_ori['normalized_error'].item():.4f}/ {metrics['normalized_error'].item():.4f}")
                 # print(f"Improvement/styled:      {metrics_ori['improvement_percent'].item():.1f}%/ {metrics['improvement_percent'].item():.1f}%")
                 
-                if use_post_processor:
-                    seg_mel = post_reflow(seg_mel, gt_spec=seg_mel, infer=True, infer_step=30, method='euler', t_start=0.7, use_tqdm=False)
+                # if use_post_processor:
+                #     seg_mel = post_reflow(seg_mel, gt_spec=seg_mel, infer=True, infer_step=30, method='euler', t_start=0.7, use_tqdm=False)
                 seg_output = vocoder.infer(seg_mel, f0_adj_hz)
             
             else:

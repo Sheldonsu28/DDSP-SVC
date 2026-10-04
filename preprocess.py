@@ -9,8 +9,9 @@ from speechbrain.inference.speaker import EncoderClassifier
 from logger import utils
 from tqdm import tqdm
 from ddsp.vocoder import F0_Extractor, Volume_Extractor, Units_Encoder
-from reflow.vocoder import Vocoder, load_style_model
+from reflow.vocoder import HghResMel, Vocoder, load_style_model
 from logger.utils import traverse_dir
+from utils import compute_spec, spectrogram_torch
 
 def parse_args(args=None, namespace=None):
     """Parse command-line arguments."""
@@ -28,96 +29,10 @@ def parse_args(args=None, namespace=None):
         default=None,
         required=False,
         help="cpu or cuda, auto if not set")
-    parser.add_argument(
-        "-j",
-        "--workers",
-        type=int,
-        default=2,
-        required=False,
-        help="number of worker processes (default: 2)")
     return parser.parse_args(args=args, namespace=namespace)
-
-
-def load_extractors(args, sample_rate=None, hop_size=None, device='cuda'):
-    if sample_rate is None:
-        sample_rate = args.data.sampling_rate
-    if hop_size is None:
-        hop_size = args.data.block_size
-    
-    # initialize f0 extractor
-    f0_extractor = F0_Extractor(
-                        args.data.f0_extractor, 
-                        sample_rate, 
-                        hop_size, 
-                        args.data.f0_min, 
-                        args.data.f0_max)
-    
-    # initialize volume extractor
-    volume_extractor = Volume_Extractor(hop_size, args.data.volume_smooth_size)
-    
-    # initialize mel extractor
-    mel_extractor = Vocoder(args.vocoder.type, args.vocoder.ckpt, device=device)
-    if mel_extractor.vocoder_sample_rate != sample_rate or mel_extractor.vocoder_hop_size != hop_size:
-        mel_extractor = None
-        print('Unmatch vocoder parameters, mel extraction is ignored!')
-    
-    # initialize units encoder
-    if args.data.encoder == 'cnhubertsoftfish':
-        cnhubertsoft_gate = args.data.cnhubertsoft_gate
-    else:
-        cnhubertsoft_gate = 10
-    units_encoder = Units_Encoder(
-                        args.data.encoder, 
-                        args.data.encoder_ckpt, 
-                        args.data.encoder_sample_rate, 
-                        args.data.encoder_hop_size,
-                        cnhubertsoft_gate=cnhubertsoft_gate,
-                        device=device)
-    return f0_extractor, volume_extractor, mel_extractor, units_encoder
     
 def preprocess(path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, high_res, device = 'cuda', use_pitch_aug = False, extensions = ['wav'], encoder2=None, encoder3=None, emo_encoder=None, emo_model=None):
     
-# Global variables for worker processes (each process has its own copy)
-_worker_f0_extractor = None
-_worker_volume_extractor = None
-_worker_mel_extractor = None
-_worker_units_encoder = None
-_worker_device = None
-
-
-def _worker_init(args, device):
-    """Initialize extractors for each worker process."""
-    global _worker_f0_extractor, _worker_volume_extractor, _worker_mel_extractor, _worker_units_encoder, _worker_device
-    _worker_device = device
-    _worker_f0_extractor, _worker_volume_extractor, _worker_mel_extractor, _worker_units_encoder = load_extractors(
-        args, device=device)
-
-
-def _process_file(file, path, sample_rate, hop_size, use_pitch_aug, extensions):
-    """
-    Process a single audio file using either provided extractors or worker-global extractors.
-
-    Args:
-        file: Audio filename
-        path: Base directory path
-        sample_rate, hop_size: Audio parameters
-        use_pitch_aug: Whether to use pitch augmentation
-        extensions: Audio file extensions
-        f0_extractor, volume_extractor, mel_extractor, units_encoder: Optional extractors
-        device: Optional processing device
-
-    Returns:
-        keyshift value if successful, None otherwise
-    """
-    global _worker_f0_extractor, _worker_volume_extractor, _worker_mel_extractor, _worker_units_encoder, _worker_device
-
-    # Use provided extractors if available, otherwise use global ones
-    f0_extractor = _worker_f0_extractor
-    volume_extractor = _worker_volume_extractor
-    mel_extractor = _worker_mel_extractor
-    units_encoder = _worker_units_encoder
-    device = _worker_device
-
     path_srcdir  = os.path.join(path, 'audio')
     path_unitsdir  = os.path.join(path, 'units')
     path_whisper_unit_dir = os.path.join(path, 'whisper_units')
@@ -136,15 +51,16 @@ def _process_file(file, path, sample_rate, hop_size, use_pitch_aug, extensions):
     path_speaker = os.path.join(path, 'speaker')
     path_emo = os.path.join(path, 'emo')
     
-    # load audio
-    audio, _ = librosa.load(path_srcfile, sr=sample_rate)
-    if len(audio.shape) > 1:
-        audio = librosa.to_mono(audio)
-    audio_t = torch.from_numpy(audio).float().to(device)
-    audio_t = audio_t.unsqueeze(0)
+    # list files
+    filelist =  traverse_dir(
+        path_srcdir,
+        extensions=extensions,
+        is_pure=True,
+        is_sort=True,
+        is_ext=True)
     
-    # extract volume
-    volume = volume_extractor.extract(audio)
+    # pitch augmentation dictionary
+    pitch_aug_dict = {}
     
     # def compute_energy(file_list):
     #     for file in file_list:
@@ -269,9 +185,8 @@ def _process_file(file, path, sample_rate, hop_size, use_pitch_aug, extensions):
         #     print(units.shape, units2.shape)
             
         
-        aug_mel_t = mel_extractor.extract(audio_t * (10 ** log10_vol_shift), sample_rate, keyshift = keyshift)
-        aug_mel = aug_mel_t.squeeze().to('cpu').numpy()
-        aug_vol = volume_extractor.extract(audio * (10 ** log10_vol_shift))
+        # extract f0
+        f0 = f0_extractor.extract(audio, uv_interp = False)
         
         uv = f0 == 0
         if len(f0[~uv]) > 0:
@@ -330,81 +245,11 @@ def _process_file(file, path, sample_rate, hop_size, use_pitch_aug, extensions):
             print('This file has been moved to ' + path_skipfile)
     print('Preprocess the audio clips in :', path_srcdir)
     
-    # extract f0
-    f0 = f0_extractor.extract(audio, uv_interp = False)
+    # single process
+    for file in tqdm(filelist, total=len(filelist)):
+        process(file)
     
-    uv = f0 == 0
-    if len(f0[~uv]) > 0:
-        # interpolate the unvoiced f0
-        f0[uv] = np.interp(np.where(uv)[0], np.where(~uv)[0], f0[~uv])
-
-        # save npy     
-        os.makedirs(os.path.dirname(path_unitsfile), exist_ok=True)
-        np.save(path_unitsfile, units)
-        os.makedirs(os.path.dirname(path_f0file), exist_ok=True)
-        np.save(path_f0file, f0.astype(np.float32))
-        os.makedirs(os.path.dirname(path_volumefile), exist_ok=True)
-        np.save(path_volumefile, volume)
-        if mel_extractor is not None:
-            os.makedirs(os.path.dirname(path_melfile), exist_ok=True)
-            np.save(path_melfile, np.ascontiguousarray(mel))
-            os.makedirs(os.path.dirname(path_augmelfile), exist_ok=True)
-            np.save(path_augmelfile, np.ascontiguousarray(aug_mel))
-            os.makedirs(os.path.dirname(path_augvolfile), exist_ok=True)
-            np.save(path_augvolfile, aug_vol)
-            return keyshift
-    else:
-        print('\n[Error] F0 extraction failed: ' + path_srcfile)
-        os.makedirs(os.path.dirname(path_skipfile), exist_ok=True)
-        shutil.move(path_srcfile, os.path.dirname(path_skipfile))
-        print('This file has been moved to ' + path_skipfile)
-    return None
-
-
-def preprocess(path, args, sample_rate=None, hop_size=None, device='cuda', use_pitch_aug=False, extensions=['wav'], workers=1):
-    # List files
-    path_srcdir = os.path.join(path, 'audio')
-    filelist = traverse_dir(
-        path_srcdir,
-        extensions=extensions,
-        is_pure=True,
-        is_sort=True,
-        is_ext=True)
-
-    # Ensure sample_rate and hop_size are set
-    if sample_rate is None:
-        sample_rate = args.data.sampling_rate
-    if hop_size is None:
-        hop_size = args.data.block_size
-
-    # Prepare arguments for worker initialization
-    init_args = (args, device)
-
-    # Multiprocessing with ProcessPoolExecutor
-    pitch_aug_dict = {}
-    with concurrent.futures.ProcessPoolExecutor(
-        max_workers=workers,
-        initializer=_worker_init,
-        initargs=init_args
-    ) as executor:
-        # Submit tasks
-        future_to_file = {
-            executor.submit(_process_file, file, path, sample_rate, hop_size, use_pitch_aug, extensions): file
-            for file in filelist
-        }
-
-        # Collect results with progress bar
-        for future in tqdm(concurrent.futures.as_completed(future_to_file), total=len(filelist)):
-            file = future_to_file[future]
-            try:
-                keyshift = future.result()
-                if keyshift is not None:
-                    pitch_aug_dict[file] = keyshift
-            except Exception as e:
-                print(f'\n[Error] Task for {file} generated an exception: {e}')
-
-    # Save pitch augmentation dictionary if any
-    if len(pitch_aug_dict) > 0:
+    if mel_extractor is not None:
         path_pitchaugdict = os.path.join(path, 'pitch_aug_dict.npy')
         np.save(path_pitchaugdict, pitch_aug_dict)
     
@@ -413,7 +258,39 @@ def preprocess(path, args, sample_rate=None, hop_size=None, device='cuda', use_p
     with concurrent.futures.ProcessPoolExecutor(max_workers=2) as executor:
         list(tqdm(executor.map(process, filelist), total=len(filelist)))
     '''
+    
+def gen_spk_emb(train_path, valid_path):
+        
+    speaker_train_dir = os.path.join(train_path, 'speaker' )
+    speaker_val_dir = os.path.join(valid_path, 'speaker')
+    
+    unit_dir_res = []
+    for file in os.listdir(speaker_train_dir):
+        if ".wav.npy" in file:
+            unit_dir_res.append(os.path.join(speaker_train_dir,file))
+
+    for file in os.listdir(speaker_val_dir):
+        if ".wav.npy" in file:
+            unit_dir_res.append(os.path.join(speaker_val_dir, file))
+
+    
+    sepaker_npys = []
+    print(len(unit_dir_res))
+    for name in sorted(unit_dir_res):
+        phone = np.expand_dims(np.load(name), 0)
+        sepaker_npys.append(phone)
+    sepaker_npys = np.concatenate(sepaker_npys, 0)
+    # print(sepaker_npys.shape)
+    sepaker_mean = np.mean(sepaker_npys, axis=0)
+    # print(sepaker_npys.shape)
+    # cont = np.concatenate([unit_npys, whisper_npys, hubert_npys], 1)
+    # cont_mean = cont.mean(0)
+    print(sepaker_mean.shape)
+    np.save('data/speaker_elysia_new.npy', sepaker_mean)
+        
+
 if __name__ == '__main__':
+    model_id = "iic/emotion2vec_plus_large"
     model = None
     # parse commands
     cmd = parse_args()
@@ -424,13 +301,10 @@ if __name__ == '__main__':
 
     # load config
     args = utils.load_config(cmd.config)
-
     sample_rate = args.data.sampling_rate
     hop_size = args.data.block_size
+    
     extensions = args.data.extensions
-    train_path = args.data.train_path
-    valid_path = args.data.valid_path
-    use_pitch_aug = args.model.use_pitch_aug
     
     # initialize f0 extractor
     f0_extractor = F0_Extractor(
@@ -492,8 +366,9 @@ if __name__ == '__main__':
                     device = device)
     
     # preprocess training set
-    preprocess(args.data.train_path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, mel_extractor_high_res, device = device, use_pitch_aug = use_pitch_aug, extensions = extensions, encoder2=units_encoder2, encoder3=units_encoder3, emo_encoder=None, emo_model= model)
+    # preprocess(args.data.train_path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, mel_extractor_high_res, device = device, use_pitch_aug = use_pitch_aug, extensions = extensions, encoder2=units_encoder2, encoder3=units_encoder3, emo_encoder=None, emo_model= model)
     
-    # preprocess validation set
-    preprocess(args.data.valid_path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, mel_extractor_high_res,  device = device, use_pitch_aug = False, extensions = extensions, encoder2=units_encoder2, encoder3=units_encoder3, emo_encoder=None, emo_model= model)
+    # # preprocess validation set
+    # preprocess(args.data.valid_path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, mel_extractor_high_res,  device = device, use_pitch_aug = False, extensions = extensions, encoder2=units_encoder2, encoder3=units_encoder3, emo_encoder=None, emo_model= model)
     
+    gen_spk_emb(args.data.train_path, args.data.valid_path)

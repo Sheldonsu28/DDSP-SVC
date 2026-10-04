@@ -57,5 +57,5 @@ train:
   save_opt: false
   weight_decay: 0.1
 vocoder:
-  ckpt: pretrain/pc_nsf_hifigan/model_elysia.ckpt
+  ckpt: pretrain/nsf_hifigan/nsf_ely_4000.ckpt
   type: nsf-hifigan
