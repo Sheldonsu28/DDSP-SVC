@@ -261,8 +261,8 @@ def preprocess(path, f0_extractor, volume_extractor, mel_extractor, units_encode
     
 def gen_spk_emb(train_path, valid_path):
         
-    speaker_train_dir = os.path.join(train_path, 'speaker' )
-    speaker_val_dir = os.path.join(valid_path, 'speaker')
+    speaker_train_dir = os.path.join(train_path, '1', 'speaker' )
+    speaker_val_dir = os.path.join(valid_path,'1', 'speaker')
     
     unit_dir_res = []
     for file in os.listdir(speaker_train_dir):
@@ -366,9 +366,9 @@ if __name__ == '__main__':
                     device = device)
     
     # preprocess training set
-    # preprocess(args.data.train_path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, mel_extractor_high_res, device = device, use_pitch_aug = use_pitch_aug, extensions = extensions, encoder2=units_encoder2, encoder3=units_encoder3, emo_encoder=None, emo_model= model)
+    preprocess(args.data.train_path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, mel_extractor_high_res, device = device, use_pitch_aug = use_pitch_aug, extensions = extensions, encoder2=units_encoder2, encoder3=units_encoder3, emo_encoder=None, emo_model= model)
     
     # # preprocess validation set
-    # preprocess(args.data.valid_path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, mel_extractor_high_res,  device = device, use_pitch_aug = False, extensions = extensions, encoder2=units_encoder2, encoder3=units_encoder3, emo_encoder=None, emo_model= model)
+    preprocess(args.data.valid_path, f0_extractor, volume_extractor, mel_extractor, units_encoder, sample_rate, hop_size, mel_extractor_high_res,  device = device, use_pitch_aug = False, extensions = extensions, encoder2=units_encoder2, encoder3=units_encoder3, emo_encoder=None, emo_model= model)
     
     gen_spk_emb(args.data.train_path, args.data.valid_path)
