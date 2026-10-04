@@ -501,7 +501,7 @@ class GlowVcStylizerWN5(nn.Module):
         formant = self.formant_estimator(stylized_feats, f0)
         # multiplier = self.f0_estimator(stylized_feats, f0)
         # new_f0 = f0 / torch.pow(2, multiplier / 12.0)
-        return stylized_feats, mu_pr, logvar_pr, mu_ps, logvar_ps, z_fwd, log_det_fwd, z_bkw, log_det_bkw, spk_pred, reflow_loss,  formant, z_ps, mask
+        return stylized_feats, mu_pr, logvar_pr, mu_ps, logvar_ps, z_fwd, log_det_fwd, z_bkw, log_det_bkw, spk_pred, formant, reflow_loss, z_ps, mask
     
 class F0Embedding(nn.Module):
     """

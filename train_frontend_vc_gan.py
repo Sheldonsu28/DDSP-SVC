@@ -87,7 +87,7 @@ if __name__ == '__main__':
         raise ValueError(f" [x] Unknown Model: {args.model.type}")
     
 
-    style_model = GlowVcStylizerWN5Mod9()
+    style_model = GlowVcStylizerWN5Mod8()
     
     optimizer = Muon_AdamW(style_model, 
                     muon_args={'weight_decay': args.train.weight_decay}, 
@@ -142,8 +142,8 @@ if __name__ == '__main__':
     # del optimizer_d
     # del scheduler_d
     # train_vc_gan(args, initial_global_step, style_model, model, optimizer, scheduler_g, vocoder, loader_train, loader_valid)train_vc_osgan2
-    # train_vc_osgan(args, initial_global_step, style_model, model, model_d, optimizer, optimizer_d, scheduler_g, scheduler_d, vocoder, loader_train, loader_valid)
+    train_vc_osgan(args, initial_global_step, style_model, model, model_d, optimizer, optimizer_d, scheduler_g, scheduler_d, vocoder, loader_train, loader_valid)
     # train_vc_osgan2(args, initial_global_step, style_model, model, model_d, optimizer, optimizer_d, scheduler_g, scheduler_d, vocoder, loader_train, loader_valid)
-    train_vc_no_gan(args, initial_global_step, lag_model,style_model, model, optimizer, scheduler_g, vocoder, loader_train, loader_valid)
+    # train_vc_no_gan(args, initial_global_step, lag_model,style_model, model, optimizer, scheduler_g, vocoder, loader_train, loader_valid)
 
     

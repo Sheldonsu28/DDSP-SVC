@@ -356,7 +356,7 @@ if __name__ == '__main__':
     
     use_style = True
     use_style_reflow = False
-    cycle_inference  = True
+    cycle_inference  = False
     whisper_mix = True
     use_post_processor = False
     z_masking = False
@@ -585,7 +585,7 @@ if __name__ == '__main__':
                     # else:
                     # print(seg_units.shape, seg_units1.shape, seg_units2.shape, hubert_mean.shape) 
                     # print(hubert_mean.shape)
-                    units, mu_pr, logvar_pr, mu_ps, logvar_ps, z_fwd, log_det_fwd, z_bkw, log_det_bkw, spk_pred, reflow_loss,  auto_formants, z_ps, _s = style_model(seg_units, seg_units1, seg_units2, hubert_mean, None, seg_f0, seg_volume, infer=True, noise_fac=0.0, alpha=1.0)
+                    units, mu_pr, logvar_pr, mu_ps, logvar_ps, z_fwd, log_det_fwd, z_bkw, log_det_bkw, spk_pred, auto_formants, reflow_loss, z_ps, _s = style_model(seg_units, seg_units1, seg_units2, hubert_mean, None, seg_f0, seg_volume, infer=True, noise_fac=0.0, alpha=1.0)
                         # units, z_f, z_r, z_pr, mu_pr, logvar_pr, z_ps, mu_ps, logvar_ps, logdet_f, logdet_r, formant, spk_pred, reflow_loss = style_model(seg_units, seg_units1, seg_units2, hubert_mean,  None, seg_f0, None, infer=True)
                         # units, formant, vq_loss, perplexity, spk_pred = style_model(seg_units, seg_units1,seg_units2,hubert_mean,  None, seg_f0, None, infer=True, noise_fac=0.0)
                     # units, _, _, _, _, _, _, _, _, _, _, _  = style_model(seg_units, seg_units1, seg_units2, hubert_mean, None, seg_f0, seg_volume, t_start=0.0, infer=True, infer_step=style_reflow_steps)
@@ -650,7 +650,7 @@ if __name__ == '__main__':
                             # seg_units1 = seg_units1 - mean_seg + mean_index
                             
                     # units, formant, vq_loss, perplexity, spk_pred = style_model(seg_units, seg_units1,seg_units2,hubert_mean,  None, seg_f0, None, infer=True, noise_fac=0.0)
-                    units, mu_pr, logvar_pr, mu_ps, logvar_ps, z_fwd, z_pr, z_bkw, log_det_bkw, spk_pred, logdet_fwd, auto_formants, z_ps, msk = style_model(units, seg_units1, seg_units2, hubert_mean, None, seg_f0, seg_volume, infer=True, noise_fac=0.0, alpha=1.0)
+                    units, mu_pr, logvar_pr, mu_ps, logvar_ps, z_fwd, log_det_fwd, z_bkw, log_det_bkw, spk_pred, auto_formants, reflow_loss, z_ps, _s = style_model(units, seg_units1, seg_units2, hubert_mean, None, seg_f0, seg_volume, infer=True, noise_fac=0.0, alpha=1.0)
                     
                 # if use_style_reflow:
                 #     units = style_reflow(z_fwd, gt_spec=seg_units, infer=True, infer_step=style_reflow_steps, method='euler', t_start=style_reflow_start, use_tqdm=False)
