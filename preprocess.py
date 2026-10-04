@@ -261,8 +261,8 @@ def preprocess(path, f0_extractor, volume_extractor, mel_extractor, units_encode
     
 def gen_spk_emb(train_path, valid_path):
         
-    speaker_train_dir = os.path.join(train_path, '1', 'speaker' )
-    speaker_val_dir = os.path.join(valid_path,'1', 'speaker')
+    speaker_train_dir = os.path.join(train_path, 'speaker','1' )
+    speaker_val_dir = os.path.join(valid_path, 'speaker','1')
     
     unit_dir_res = []
     for file in os.listdir(speaker_train_dir):
@@ -275,7 +275,6 @@ def gen_spk_emb(train_path, valid_path):
 
     
     sepaker_npys = []
-    print(len(unit_dir_res))
     for name in sorted(unit_dir_res):
         phone = np.expand_dims(np.load(name), 0)
         sepaker_npys.append(phone)
@@ -285,8 +284,7 @@ def gen_spk_emb(train_path, valid_path):
     # print(sepaker_npys.shape)
     # cont = np.concatenate([unit_npys, whisper_npys, hubert_npys], 1)
     # cont_mean = cont.mean(0)
-    print(sepaker_mean.shape)
-    np.save('data/speaker_elysia_new.npy', sepaker_mean)
+    np.save('data/speaker_elysia_test.npy', sepaker_mean)
         
 
 if __name__ == '__main__':
