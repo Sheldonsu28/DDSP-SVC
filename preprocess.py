@@ -10,9 +10,8 @@ from funasr import AutoModel
 from logger import utils
 from tqdm import tqdm
 from ddsp.vocoder import F0_Extractor, Volume_Extractor, Units_Encoder
-from reflow.vocoder import HghResMel, Vocoder, load_style_model
+from reflow.vocoder import Vocoder, load_style_model
 from logger.utils import traverse_dir
-from utils import compute_spec, spectrogram_torch
 
 def parse_args(args=None, namespace=None):
     """Parse command-line arguments."""
@@ -263,7 +262,7 @@ if __name__ == '__main__':
     model_id = "iic/emotion2vec_plus_large"
     model = AutoModel(
         model=model_id,
-        hub="huggingface",  # "ms" or "modelscope" for China mainland users; "hf" or "huggingface" for other overseas users
+        hub="modelscope",  # "ms" or "modelscope" for China mainland users; "hf" or "huggingface" for other overseas users
     )
     # parse commands
     cmd = parse_args()
