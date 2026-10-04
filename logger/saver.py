@@ -3,7 +3,6 @@ author: wayn391@mastertones
 '''
 
 import os
-import json
 import time
 import yaml
 import datetime
@@ -11,7 +10,6 @@ import torch
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from . import utils
 from torch.utils.tensorboard import SummaryWriter
 
 class Saver(object):
@@ -113,11 +111,10 @@ class Saver(object):
 
     def save_model(
             self,
-            model, 
+            model,
             optimizer,
             name='model',
-            postfix='',
-            to_json=False):
+            postfix=''):
         # path
         if postfix:
             postfix = '_' + postfix

@@ -37,6 +37,7 @@ def get_gradient_ratios(lossA, lossB, x_f, eps=1e-6):
 
     return gamma
 
+from torch.amp import autocast, GradScaler
 
 def calculate_mel_snr(gt_mel, pred_mel):
     # 计算误差图像
@@ -53,9 +54,9 @@ def calculate_mel_snr(gt_mel, pred_mel):
 def calculate_mel_si_snr(gt_mel, pred_mel):
     # 将测试图像按比例调整以最小化误差
     scale = torch.sum(gt_mel * pred_mel) / torch.sum(gt_mel ** 2)
-    test_image_scaled = scale * pred_mel
+    test_image_scaled = scale * gt_mel
     # 计算误差图像
-    error_image = gt_mel - test_image_scaled
+    error_image = pred_mel - test_image_scaled 
     # 计算参考图像的平方均值
     mean_square_reference = torch.mean(gt_mel ** 2)
     # 计算误差图像的方差
@@ -137,8 +138,8 @@ def test(args, model, vocoder, loader_test, saver):
     # intialization
     num_batches = len(loader_test)
     rtf_all = []
-    spec_min = -2
-    spec_max = 10
+    spec_min = -6
+    spec_max = 6
     spec_range = 12
     
     # run
@@ -205,25 +206,6 @@ def test(args, model, vocoder, loader_test, saver):
                 audio = librosa.to_mono(audio)
             audio = torch.from_numpy(audio).unsqueeze(0).to(signal)
             saver.log_audio({fn+'/gt.wav': audio, fn+'/pred.wav': signal})
-
-            WAV2MEL = STFT(
-                        sr=args.data.sampling_rate,
-                        n_mels=128,
-                        n_fft=2048,
-                        win_size=2048,
-                        hop_length=512,
-                        fmin=40,
-                        fmax=22050,
-                        clip_val=1e-5)
-            audio = audio.unsqueeze(0)
-            pre_mel = WAV2MEL.get_mel(signal[0, ...])
-            pre_mel = pre_mel.transpose(-1, -2)
-            gt_mel = WAV2MEL.get_mel(audio[0, ...])
-            gt_mel = gt_mel.transpose(-1, -2)
-            # 如果形状不同,裁剪使得形状相同
-            if pre_mel.shape[1] != gt_mel.shape[1]:
-                gt_mel = gt_mel[:, :pre_mel.shape[1], :]
-            saver.log_spec(data['name'][0], gt_mel, pre_mel)
 
             # 计算指标
             mel_val_mse_all += torch.nn.functional.mse_loss(mel, data['mel']).detach().cpu().numpy()
