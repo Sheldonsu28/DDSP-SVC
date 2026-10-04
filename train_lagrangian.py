@@ -1,0 +1,68 @@
+import os
+import argparse
+import torch
+from torch.optim import lr_scheduler
+from optimizer.muon import Muon_AdamW
+from logger import utils
+from reflow.data_loaders import get_data_loaders
+from reflow.vocoder import Vocoder, Unit2Wav
+from test10 import DiagonalLagrangian
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.set_float32_matmul_precision('high')
+torch.backends.cudnn.benchmark = True
+
+
+def parse_args(args=None, namespace=None):
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c",
+        "--config",
+        type=str,
+        required=True,
+        help="path to the config file")
+    return parser.parse_args(args=args, namespace=namespace)
+
+
+if __name__ == '__main__':
+    # parse commands
+    cmd = parse_args()
+    
+    # load config
+    args = utils.load_config(cmd.config)
+    print(' > config:', cmd.config)
+    print(' >    exp:', args.env.expdir)
+    
+    # load vocoder
+    vocoder = Vocoder(args.vocoder.type, args.vocoder.ckpt, device=args.device)
+    
+    # load model
+    if args.model.type == 'RectifiedFlow':
+        from reflow.solver import train_lagrangian
+        model = DiagonalLagrangian(768)
+                    
+    else:
+        raise ValueError(f" [x] Unknown Model: {args.model.type}")
+    
+    # device
+    if args.device == 'cuda':
+        torch.cuda.set_device(args.env.gpu_id)
+    model.to(args.device)
+    # model = torch.compile(model.cuda(), mode="default", dynamic=False)
+    # load parameters
+    optimizer = Muon_AdamW(model, 
+                    muon_args={'weight_decay': args.train.weight_decay}, 
+                    adamw_args={'weight_decay': 0})
+    initial_global_step, model, optimizer = utils.load_model(args.env.expdir, model, optimizer, device=args.device)
+    for param_group in optimizer.param_groups:
+        param_group['initial_lr'] = args.train.lr
+        param_group['lr'] = args.train.lr * args.train.gamma ** max((initial_global_step - 2) // args.train.decay_step, 0)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=args.train.decay_step, gamma=args.train.gamma, last_epoch=initial_global_step-2)
+                        
+    # datas
+    loader_train, loader_valid = get_data_loaders(args, whole_audio=False, train_aug=False, load_audio=False)
+    
+    # run
+    train_lagrangian(args, initial_global_step, model, optimizer, scheduler, vocoder, loader_train, loader_valid)
+    

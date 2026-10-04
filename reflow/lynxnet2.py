@@ -3,6 +3,9 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
+
+from stylizer.wavenet import WN
 
 
 class SwiGLU(nn.Module):
@@ -53,34 +56,109 @@ class Transpose(nn.Module):
     def forward(self, x):
         return x.transpose(*self.dims)
 
+class CausalConv1d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, dilation=1, **kwargs):
+        super(CausalConv1d, self).__init__()
+        self.padding = (kernel_size - 1) * dilation
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, dilation=dilation, padding=0, **kwargs)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(F.pad(x, (self.padding, 0)))
+    
+    
+class WnWrapper(nn.Module):
+    def __init__(self, dim, gin_channels=0, layers=5) -> None:
+        super().__init__()
+        self.wn = WN(dim, 5, 1, layers, gin_channels=gin_channels)
+        
+    def forward(self, x, gin=None):
+        return self.wn(x.transpose(1, 2), g=gin).transpose(1, 2)
+    
+    
+class WnWrapper1(nn.Module):
+    def __init__(self, dim, kernel_size=5, dilation_rate=1, n_layers=4, gin_channels=0, p_dropout=0.) -> None:
+        super().__init__()
+        self.wn = WN(dim, kernel_size=kernel_size, dilation_rate=dilation_rate, gin_channels=gin_channels ,n_layers=n_layers, p_dropout=p_dropout)
+        
+    def forward(self, x, g=None):
+        return self.wn(x, g=g)
 
 class LYNXNet2Block(nn.Module):
-    def __init__(self, dim, expansion_factor, kernel_size=31, dropout=0.):
+    def __init__(self, dim, expansion_factor, kernel_size=31, dropout=0., use_wn=False, lite=False, wn_normal=False, gin_channels=0):
         super().__init__()
+        self.dim = dim
         inner_dim = int(dim * expansion_factor)
         if float(dropout) > 0.:
             _dropout = nn.Dropout(dropout)
         else:
             _dropout = nn.Identity()
-        self.net = nn.Sequential(
-            nn.LayerNorm(dim),
-            Transpose((1, 2)),
-            nn.Conv1d(dim, dim, kernel_size=kernel_size, padding=kernel_size // 2, groups=dim),
-            Transpose((1, 2)),
-            nn.Linear(dim, inner_dim * 2),
-            SwiGLU(),
-            nn.Linear(inner_dim, inner_dim * 2),
-            SwiGLU(),
-            nn.Linear(inner_dim, dim),
-            _dropout
-        )
+        if use_wn:
+            if lite:
+                self.net = nn.Sequential(
+                nn.LayerNorm(dim),
+                WnWrapper(dim, gin_channels),
+                nn.Linear(dim, inner_dim * 2),
+                SwiGLU(),
+                nn.Linear(inner_dim, dim),
+                _dropout
+            )
+            else:
+                self.net = nn.Sequential(
+                    nn.LayerNorm(dim),
+                    WnWrapper(dim, gin_channels, layers=5),
+                    nn.Linear(dim, inner_dim * 2),
+                    SwiGLU(),
+                    nn.Linear(inner_dim, inner_dim * 2),
+                    SwiGLU(),
+                    nn.Linear(inner_dim, dim),
+                    _dropout
+                )
+        elif wn_normal:
+            self.net = nn.Sequential(
+                nn.LayerNorm(dim),
+                Transpose((1, 2)),
+                WnWrapper1(
+                    self.dim,
+                    5,
+                    1,
+                    5
+                ),
+                Transpose((1, 2)),
+                nn.Linear(dim, inner_dim * 2),
+                SwiGLU(),
+                nn.Linear(inner_dim, inner_dim * 2),
+                SwiGLU(),
+                nn.Linear(inner_dim, dim),
+                _dropout
+            )
+        else:
+            self.net = nn.Sequential(
+                nn.LayerNorm(dim),
+                Transpose((1, 2)),
+                nn.Conv1d(dim, dim, kernel_size=kernel_size, padding=kernel_size // 2, groups=dim),
+                Transpose((1, 2)),
+                nn.Linear(dim, inner_dim * 2),
+                SwiGLU(),
+                nn.Linear(inner_dim, inner_dim * 2),
+                SwiGLU(),
+                nn.Linear(inner_dim, dim),
+                _dropout
+            )
 
-    def forward(self, x):
-        return x + self.net(x)
+    def forward(self, x, gin=None):
+        y = x
+        if not gin is None:
+            for layer in self.net:
+                if isinstance(layer, WnWrapper):
+                    y = layer(y, gin=gin)
+                else:
+                    y = layer(y)
+        else:
+            y = self.net(x)
+        return x + y
 
 
 class LYNXNet2(nn.Module):
-    def __init__(self, in_dims, dim_cond, n_layers=6, n_chans=512, n_dilates=1, dropout=0.):
+    def __init__(self, in_dims, dim_cond, n_layers=6, n_chans=512, n_dilates=1, dropout=0.,kernel_size=31, use_wn=False, lite=False, wn_normal=False, gin_channels=0):
         """
         LYNXNet2(Linear Gated Depthwise Separable Convolution Network Version 2)
         """
@@ -98,8 +176,12 @@ class LYNXNet2(nn.Module):
                 LYNXNet2Block(
                     dim=n_chans, 
                     expansion_factor=n_dilates, 
-                    kernel_size=31,
-                    dropout=dropout
+                    kernel_size=kernel_size,
+                    dropout=dropout,
+                    use_wn=use_wn,
+                    lite=lite,
+                    wn_normal=wn_normal,
+                    gin_channels=gin_channels
                 )
                 for i in range(n_layers)
             ]
@@ -107,8 +189,12 @@ class LYNXNet2(nn.Module):
         self.norm = nn.LayerNorm(n_chans)
         self.output_projection = nn.Linear(n_chans, in_dims)
         nn.init.zeros_(self.output_projection.weight)
+        
+    # def swap_conv(self):
+    #     for layer in self.residual_layers:
+    #         # layer.replace_conv()
     
-    def forward(self, spec, diffusion_step, cond):
+    def forward(self, spec, diffusion_step, cond, gin=None):
         """
         :param spec: [B, F, M, T]
         :param diffusion_step: [B, 1]
@@ -124,13 +210,14 @@ class LYNXNet2(nn.Module):
             use_4_dim = True
 
         assert x.dim() == 3, f"mel must be 3 dim tensor, but got {x.dim()}"
-
+        # print(x.shape, cond.shape)
         x = self.input_projection(x.transpose(1, 2))
         x = x + self.conditioner_projection(cond.transpose(1, 2))
         x = x + self.diffusion_embedding(diffusion_step).unsqueeze(1)
-        
+        # x = x + checkpoint(self.diffusion_embedding, diffusion_step).unsqueeze(1)
         for layer in self.residual_layers:
-            x = layer(x)
+            x = layer(x, gin=gin)
+            # x = checkpoint(layer, x, use_reentrant=False)
 
         # post-norm
         x = self.norm(x)

@@ -70,7 +70,7 @@ class STFT():
         self.mel_basis = {}
         self.hann_window = {}
     
-    def get_mel(self, y, keyshift=0, speed=1, center=False):
+    def get_mel(self, y, keyshift=0, speed=1, center=False, return_complex=True):
         sampling_rate = self.target_sr
         n_mels     = self.n_mels
         n_fft      = self.n_fft

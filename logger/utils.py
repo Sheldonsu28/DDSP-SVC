@@ -60,7 +60,6 @@ def get_network_paras_amount(model_dict):
     for model_name, model in model_dict.items():
         # all_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-
         info[model_name] = trainable_params
     return info
 
@@ -116,7 +115,45 @@ def load_model(
         print(' [*] restoring model from', path_pt)
         ckpt = torch.load(path_pt, map_location=torch.device(device))
         global_step = ckpt['global_step']
+        # global_step = 0
         model.load_state_dict(ckpt['model'], strict=False)
-        if ckpt.get('optimizer') != None:
+        # model.reflow_model.velocity_fn.swap_conv()
+        model.to(device)
+        if not ckpt.get('optimizer') is None:
             optimizer.load_state_dict(ckpt['optimizer'])
     return global_step, model, optimizer
+
+
+def load_gan_model(
+        expdir, 
+        model_g,
+        optimizer,
+        model_d,
+        optimizer_d,
+        name='model',
+        postfix='',
+        device='cpu'):
+    if postfix == '':
+        postfix = '_' + postfix
+    path = os.path.join(expdir, name+postfix)
+    path_pt = traverse_dir(expdir, ['pt'], is_ext=False)
+    global_step = 0
+    if len(path_pt) > 0:
+        steps = [s[len(path):] for s in path_pt]
+        maxstep = max([int(s) if s.isdigit() else 0 for s in steps])
+        if maxstep >= 0:
+            path_pt = path+str(maxstep)+'.pt'
+        else:
+            path_pt = path+'best.pt'
+        print(' [*] restoring model from', path_pt)
+        ckpt = torch.load(path_pt, map_location=torch.device(device))
+        global_step = ckpt['global_step']
+        model_g.load_state_dict(ckpt['model'], strict=False)
+        model_d.load_state_dict(ckpt['model_d'], strict=False)
+        if not ckpt.get('optimizer') is None:
+            optimizer.load_state_dict(ckpt['optimizer'])
+        if not ckpt.get('optimizer_d') is None:
+            optimizer_d.load_state_dict(ckpt['optimizer_d'])
+        model_d = model_d.to(device)
+        model_g = model_g.to(device)
+    return global_step, model_g, optimizer, model_d, optimizer_d

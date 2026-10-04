@@ -18,9 +18,19 @@ class Saver(object):
     def __init__(
             self, 
             args,
-            initial_global_step=-1):
-
+            initial_global_step=-1, train_reflow=False, train_post=False, train_style_reflow=False, train_enhance=False):
+            
         self.expdir = args.env.expdir
+        if not train_reflow:
+            self.expdir =  args.env.style_dir
+        if train_post:
+            self.expdir =  args.env.post_dir
+            
+        if train_style_reflow:
+            self.expdir = args.env.style_flow_dir
+            
+        if train_enhance:
+            self.expdir =  args.env.style_enhance_dir
         self.sample_rate = args.data.sampling_rate
         
         # cold start
@@ -127,6 +137,47 @@ class Saver(object):
             torch.save({
                 'global_step': self.global_step,
                 'model': model.state_dict()}, path_pt)
+            
+        # to json
+        if to_json:
+            path_json = os.path.join(
+                self.expdir , name+'.json')
+            utils.to_json(path_params, path_json)
+            
+    def save_gan_model(
+            self,
+            model, 
+            model_d,
+            optimizer,
+            optimizer_d,
+            name='model',
+            postfix='',
+            to_json=False):
+        # path
+        if postfix:
+            postfix = '_' + postfix
+        path_pt = os.path.join(
+            self.expdir , name+postfix+'.pt')
+       
+        # check
+        print(' [*] model checkpoint saved: {}'.format(path_pt))
+
+        # save
+        print(optimizer, optimizer_d)
+        if optimizer is not None:
+            torch.save({
+                'global_step': self.global_step,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'model_d': model_d.state_dict(),
+                'optimizer_d':optimizer_d.state_dict()
+                }, path_pt)
+        else:
+            torch.save({
+                'global_step': self.global_step,
+                'model': model.state_dict(),
+                'model_d': model_d.state_dict(),
+                }, path_pt)
             
         # to json
         if to_json:

@@ -29,6 +29,22 @@ class SSSLoss(nn.Module):
 
         loss = converge_term + self.alpha * log_term
         return loss
+    
+class MRSTFTLoss(nn.Module):
+    '''
+    Multi-Resolution STFT Loss.
+    Fixed set of FFT scales, each scale = spectral convergence + alpha * log-magnitude L1.
+    '''
+
+    def __init__(self, n_ffts=(2048, 1024, 512, 256, 128), alpha=1.0, overlap=0.75, eps=1e-7):
+        super().__init__()
+        self.losses = nn.ModuleList([SSSLoss(n_fft, alpha, overlap, eps) for n_fft in n_ffts])
+
+    def forward(self, x_pred, x_true):
+        value = 0.
+        for loss_func in self.losses:
+            value += loss_func(x_true, x_pred)
+        return value / len(self.losses)
         
         
 class RSSLoss(nn.Module):

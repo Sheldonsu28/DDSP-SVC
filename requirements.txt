@@ -1,4 +1,10 @@
 fairseq
+# fairseq 0.12.2 declares hydra-core<1.1 / omegaconf<2.1, but funasr needs
+# hydra-core>=1.3.2. The newer versions work fine with fairseq's checkpoint
+# loading, so pin them here to stop pip downgrading and breaking funasr.
+hydra-core>=1.3.2
+omegaconf>=2.3.0
+funasr
 FreeSimpleGUI
 gin
 gin_config
@@ -17,4 +23,5 @@ tensorboard
 torchcrepe
 torchfcpe
 tqdm
+faiss-cpu
 transformers

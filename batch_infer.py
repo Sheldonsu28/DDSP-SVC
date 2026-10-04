@@ -222,7 +222,8 @@ def parse_args(args=None, namespace=None):
 
 def infer(input_path, output_path, cmd, device, model, vocoder, args, units_encoder):
     # load input
-    audio, sample_rate = librosa.load(input_path, sr=None)
+    audio, sample_rate = librosa.load(input_path, sr=44100)
+    
     if len(audio.shape) > 1:
         audio = librosa.to_mono(audio)
     hop_size = args.data.block_size * sample_rate / args.data.sampling_rate
@@ -326,13 +327,13 @@ def infer(input_path, output_path, cmd, device, model, vocoder, args, units_enco
         print('infer step cannot be negative!')
         exit(0)
 
-    with torch.no_grad():
+    with torch.inference_mode():
         mel = model(
             units,
             f0 / vocal_register_factor,
             volume,
             spk_id=spk_id,
-            spk_mix_dict=spk_mix_dict,
+            spk_mix_dict=None,
             aug_shift=formant_shift_key,
             vocoder=vocoder,
             infer=True,

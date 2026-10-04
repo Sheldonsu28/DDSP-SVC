@@ -6,6 +6,10 @@ from optimizer.muon import Muon_AdamW
 from logger import utils
 from reflow.data_loaders import get_data_loaders
 from reflow.vocoder import Vocoder, Unit2Wav
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.set_float32_matmul_precision('high')
+torch.backends.cudnn.benchmark = True
 
 
 def parse_args(args=None, namespace=None):
@@ -57,7 +61,7 @@ if __name__ == '__main__':
     if args.device == 'cuda':
         torch.cuda.set_device(args.env.gpu_id)
     model.to(args.device)
-    
+    # model = torch.compile(model.cuda(), mode="default", dynamic=False)
     # load parameters
     optimizer = Muon_AdamW(model, 
                     muon_args={'weight_decay': args.train.weight_decay}, 
@@ -69,7 +73,7 @@ if __name__ == '__main__':
     scheduler = lr_scheduler.StepLR(optimizer, step_size=args.train.decay_step, gamma=args.train.gamma, last_epoch=initial_global_step-2)
                         
     # datas
-    loader_train, loader_valid = get_data_loaders(args, whole_audio=False)
+    loader_train, loader_valid = get_data_loaders(args, whole_audio=False, train_aug=True, load_audio=False)
     
     # run
     train(args, initial_global_step, model, optimizer, scheduler, vocoder, loader_train, loader_valid)

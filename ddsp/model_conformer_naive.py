@@ -27,7 +27,8 @@ class ConformerNaiveEncoder(nn.Module):
                  use_norm: bool = False,
                  conv_only: bool = False,
                  conv_dropout: float = 0.,
-                 atten_dropout: float = 0.
+                 atten_dropout: float = 0.,
+                 kernel_size:int = 31
                  ):
         super().__init__()
         self.num_layers = num_layers
@@ -39,7 +40,7 @@ class ConformerNaiveEncoder(nn.Module):
 
         self.encoder_layers = nn.ModuleList(
             [
-                CFNEncoderLayer(dim_model, num_heads, use_norm, conv_only, conv_dropout, atten_dropout)
+                CFNEncoderLayer(dim_model, num_heads, use_norm, conv_only, conv_dropout, atten_dropout, kernel_size)
                 for _ in range(num_layers)
             ]
         )
@@ -77,11 +78,12 @@ class CFNEncoderLayer(nn.Module):
                  use_norm: bool = False,
                  conv_only: bool = False,
                  conv_dropout: float = 0.,
-                 atten_dropout: float = 0.1
+                 atten_dropout: float = 0.1,
+                 kernel_size:int = 31
                  ):
         super().__init__()
 
-        self.conformer = ConformerConvModule(dim_model, use_norm=use_norm, dropout=conv_dropout)
+        self.conformer = ConformerConvModule(dim_model, use_norm=use_norm, dropout=conv_dropout, kernel_size=kernel_size)
         
         if not conv_only:
             self.attn = nn.TransformerEncoderLayer(

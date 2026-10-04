@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
 from .model_conformer_naive import ConformerNaiveEncoder
+from torch.utils.checkpoint import checkpoint
 
 
 def split_to_dict(tensor, tensor_splits):
@@ -68,6 +69,7 @@ class Unit2Control(nn.Module):
     def forward(self, units, source, noise, volume, spk_id = None, spk_mix_dict = None, aug_shift = None):
         
         '''
+        Create the filters for harmnic signal and noise signal
         input: 
             B x n_frames x n_unit
         return: 
